@@ -9,8 +9,7 @@ from typing import Dict, List, Tuple
 import httpx
 from openai import AsyncOpenAI
 
-from nekro_agent.api.core import logger
-from nekro_agent.core import config as core_config
+from .logger import logger
 
 
 async def resolve_missing_dependencies(
@@ -49,8 +48,10 @@ package-name: https://esm.sh/package-name@version
 只输出 URL 映射，不要任何解释。不确定的包直接跳过不输出。"""
 
     try:
-        # 获取模型配置
-        model_info = core_config.get_model_group_info(model_group)
+        # 通过运行时适配器获取模型配置
+        from ..runtime import get_adapter
+        adapter = get_adapter()
+        model_info = adapter.get_model_info(model_group)
 
         http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=30, read=60, write=60, pool=30),
@@ -58,14 +59,14 @@ package-name: https://esm.sh/package-name@version
 
         try:
             async with AsyncOpenAI(
-                api_key=model_info.API_KEY.strip() if model_info.API_KEY else None,
-                base_url=model_info.BASE_URL,
+                api_key=model_info["api_key"],
+                base_url=model_info["base_url"],
                 http_client=http_client,
             ) as client:
                 response = await client.chat.completions.create(
-                    model=model_info.CHAT_MODEL,
+                    model=model_info["model"],
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2,  # 低温度以获得更稳定的结果
+                    temperature=0.2,
                     max_tokens=500,
                 )
 

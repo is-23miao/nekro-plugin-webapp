@@ -7,7 +7,12 @@ Developer 是核心开发者，负责编写所有代码。
 from typing import Optional
 
 from ..core.context import ProductSpec
-from ..plugin import config
+
+try:
+    from ..plugin import config
+    LANGUAGE = getattr(config, "LANGUAGE", "Chinese")
+except (ImportError, ModuleNotFoundError):
+    LANGUAGE = "Chinese"
 
 
 def build_system_prompt(spec: Optional[ProductSpec] = None) -> str:
@@ -119,13 +124,14 @@ export default function App() {{
 |------|------|------|
 | 读取 | `@@READ paths="file1.tsx,file2.tsx"` | 查看现有文件（调用后停止输出等待反馈） |
 | 编译 | `@@COMPILE` | 触发编译验证（可选） |
-| 完成 | `@@DONE summary="描述" title="标题"` | **触发编译和提交，必须作为最后一行** |
+| 完成 | `@@DONE summary="描述" title="标题" [skip_check=true]` | **触发编译和提交，必须作为最后一行** |
 | 中止 | `@@ABORT reason="原因"` | 遇到无法解决的问题时中止 |
 
 > ⚠️ **@@DONE 行为说明**:
 > - 调用后立即触发编译和任务提交
 > - **之后的所有内容都不会被处理**
 > - 必须确保所有代码已输出完毕后再调用
+> - **skip_check=true**: 跳过类型检查（仅当确认类型错误为第三方库类型定义缺失等误报时使用，例如 Three.js JSX 元素类型）
 
 ## 修改策略 ⚠️
 
@@ -210,7 +216,7 @@ export default function App() {{
 
 ## 语言偏好
 
-用户偏好语言: **{config.LANGUAGE}**
+用户偏好语言: **{LANGUAGE}**
 - UI 文本必须使用此语言
 - 代码注释可使用英文
 """

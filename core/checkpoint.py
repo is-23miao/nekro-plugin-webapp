@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from nekro_agent.core.logger import logger
+from .logger import logger
 
 
 @dataclass

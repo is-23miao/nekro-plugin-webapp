@@ -11,9 +11,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
-from nekro_agent.core.logger import logger
-
 from ..plugin import config
+from .logger import logger
 
 TaskStatus = Literal["pending", "running", "success", "failed", "archived"]
 

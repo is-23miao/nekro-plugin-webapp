@@ -13,15 +13,14 @@
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from nekro_agent.core.logger import logger
-
-from ..core.context import AgentState, ProductSpec, ToolContext
-from ..core.error_feedback import ToolResult
-from ..core.stream_processor import ControlUnitType, IterationResult, StreamProcessor
 from ..services.runtime_state import runtime_state
 from ..services.task_tracer import TaskTracer
 from ..services.vfs import get_project_context
 from ..tools import execute_tool_safe
+from .context import AgentState, ProductSpec, ToolContext
+from .error_feedback import ToolResult
+from .logger import logger
+from .stream_processor import ControlUnitType, IterationResult, StreamProcessor
 
 
 async def run_developer_loop(
@@ -298,8 +297,8 @@ def _create_tool_executor(ctx: ToolContext):
     async def executor(
         tool_name: str, tool_args: Dict[str, Any], _ctx: Any,
     ) -> ToolResult:
-        from ..core.error_feedback import ErrorType
-        from ..core.error_feedback import ToolResult as TR
+        from .error_feedback import ErrorType
+        from .error_feedback import ToolResult as TR
 
         # 执行工具
         result = await execute_tool_safe(tool_name, tool_args, ctx)

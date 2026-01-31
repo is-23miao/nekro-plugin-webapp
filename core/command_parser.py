@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from nekro_agent.core.logger import logger
+from .logger import logger
 
 
 class CommandType:

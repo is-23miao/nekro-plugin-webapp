@@ -1,36 +1,33 @@
 """流式文本客户端 (Streaming Text Client)
 
 提供纯文本模式的流式 LLM 调用。
-Text-to-Tool Bridge 架构的底层通信组件。
-
-注意: 此版本移除了所有 Native Tool Call 支持。
-工具调用通过文本解析实现 (@@TOOL 标记)。
+通过运行时适配器获取模型配置，支持插件和 CLI 两种模式。
 """
 
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
 from openai import AsyncOpenAI
 
-from nekro_agent.core import config as core_config
-from nekro_agent.core.logger import logger
+from .logger import logger
+
+DEFAULT_USER_AGENT = "NekroWebApp/3.0"
 
 
 def _create_http_client(
+    user_agent: str = DEFAULT_USER_AGENT,
     proxy_url: Optional[str] = None,
     read_timeout: int = 300,
     write_timeout: int = 300,
     connect_timeout: int = 30,
     pool_timeout: int = 30,
 ) -> httpx.AsyncClient:
-    """创建配置好的 httpx.AsyncClient
-
-    复用 nekro-agent 的 HTTP 客户端配置模式。
-    """
-
+    """创建配置好的 httpx.AsyncClient"""
+    
     async def enforce_user_agent(request: httpx.Request) -> None:
-        request.headers["User-Agent"] = core_config.OPENAI_CLIENT_USER_AGENT
-
+        request.headers["User-Agent"] = user_agent
+    
     return httpx.AsyncClient(
         timeout=httpx.Timeout(
             connect=connect_timeout,
@@ -46,70 +43,36 @@ def _create_http_client(
 async def stream_text_completion(
     messages: List[Dict[str, Any]],
     model_group: str,
-    proxy_url: Optional[str] = None,
+    proxy_url: Optional[str] = None,  # noqa: ARG001 - 保留接口兼容
 ) -> AsyncIterator[str]:
     """流式调用 OpenAI 兼容 API（纯文本模式）
 
-    使用 nekro-agent 的模型组配置获取 API 参数。
+    通过运行时适配器获取模型配置。
     不传递 tools 参数，LLM 只输出纯文本。
 
     Args:
         messages: 消息列表
         model_group: 模型组名称
-        proxy_url: 可选代理 URL
+        proxy_url: 可选代理 URL（由适配器内部处理）
 
     Yields:
         str: 文本内容增量
-
-    Example:
-        async for chunk in stream_text_completion(messages, "default"):
-            print(chunk, end="", flush=True)
     """
-    # 获取模型配置
-    model_info = core_config.get_model_group_info(model_group)
-
-    logger.info(
-        f"[StreamingClient] 开始流式调用 (纯文本模式)，"
-        f"模型组: {model_group}, 模型: {model_info.CHAT_MODEL}",
-    )
-
-    http_client = _create_http_client(proxy_url=proxy_url)
-
-    try:
-        async with AsyncOpenAI(
-            api_key=model_info.API_KEY.strip() if model_info.API_KEY else None,
-            base_url=model_info.BASE_URL,
-            http_client=http_client,
-        ) as client:
-            stream = await client.chat.completions.create(
-                model=model_info.CHAT_MODEL,
-                messages=messages,  # type: ignore[arg-type]
-                temperature=model_info.TEMPERATURE,
-                stream=True,
-                # 不传递 tools 参数，纯文本模式
-            )
-
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-
-    except Exception as e:
-        logger.exception(f"[StreamingClient] 流式调用异常: {e}")
-        raise
-    finally:
-        await http_client.aclose()
+    from ..runtime import get_adapter
+    
+    adapter = get_adapter()
+    
+    # 通过适配器的 stream_llm 方法完成调用
+    async for chunk in adapter.stream_llm(messages, model_group):
+        yield chunk
 
 
-# ==================== 保留旧接口以便渐进式迁移 ====================
-# 以下代码在迁移完成后可以删除
-
-from dataclasses import dataclass, field
+# ==================== 兼容旧接口 ====================
 
 
 @dataclass
 class ToolCallDelta:
     """Tool Call 增量数据 (已废弃，保留兼容)"""
-
     index: int
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
@@ -119,7 +82,6 @@ class ToolCallDelta:
 @dataclass
 class StreamChunk:
     """流式响应块 (已废弃，保留兼容)"""
-
     content_delta: Optional[str] = None
     tool_calls: List[ToolCallDelta] = field(default_factory=list)
     finish_reason: Optional[str] = None
@@ -141,6 +103,5 @@ async def stream_tool_call_completion(
         "请迁移到 stream_text_completion",
     )
 
-    # 简化实现：忽略 tools 参数，只返回文本
     async for text in stream_text_completion(messages, model_group, proxy_url):
         yield StreamChunk(content_delta=text)

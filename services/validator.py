@@ -7,7 +7,7 @@ import json
 import re
 from typing import Dict, Optional, Tuple
 
-from nekro_agent.core import logger
+from .logger import logger
 
 
 class Validator:

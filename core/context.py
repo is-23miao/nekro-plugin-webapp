@@ -10,9 +10,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ..services.task_tracer import TaskTracer
-
 if TYPE_CHECKING:
+    from ..services.task_tracer import TaskTracer
     from ..services.vfs import ProjectContext
 
 
@@ -153,6 +152,10 @@ class AgentState(BaseModel):
         default_factory=list,
         description="待处理的文件列表",
     )
+    diff_fail_counts: Dict[str, int] = Field(
+        default_factory=dict,
+        description="每个文件的 DIFF 失败次数追踪",
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -178,7 +181,7 @@ class ToolContext:
     task_id: str
     project: "ProjectContext"
     state: AgentState
-    tracer: TaskTracer  # 必须存在 (可内部禁用)
+    tracer: "TaskTracer"  # 必须存在 (可内部禁用)
     spec: Optional[ProductSpec] = None
 
     def log_tool_call(self, tool_name: str, args: Dict[str, Any], result: str) -> None:

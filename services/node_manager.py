@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 if TYPE_CHECKING:
     from .task_tracer import TaskTracer
 
-from nekro_agent.api.core import logger
+from .logger import logger
 
 # Configuration
 NODE_VERSION = "v18.19.0"

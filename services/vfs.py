@@ -7,7 +7,7 @@
 import re
 from typing import Dict, List, Optional
 
-from nekro_agent.api.core import logger
+from .logger import logger
 
 
 class ProjectContext:

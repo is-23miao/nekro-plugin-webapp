@@ -14,10 +14,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from nekro_agent.core.logger import logger
+from .logger import logger
 
 if TYPE_CHECKING:
-    from ..services.vfs import ProjectContext
+    from .vfs import ProjectContext
 
 
 class TaskEvent(str, Enum):

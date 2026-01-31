@@ -1,17 +1,45 @@
 """部署服务
 
 负责将 HTML 内容部署到 Cloudflare Worker。
+通过运行时适配器获取配置，支持 CLI 和插件两种模式。
 """
 
 import asyncio
 from typing import Dict, Optional
 
 import httpx
-
-from nekro_agent.api.core import logger
-
 from ..models import CreatePageRequest, CreatePageResponse
-from ..plugin import config
+from .logger import logger
+
+
+async def _emit_deploy_event(url: str) -> None:
+    try:
+        from ..cli.stream import EventType, task_stream
+        await task_stream.emit_deploy_event(EventType.DEPLOY_SUCCESS, url=url, message=f"部署成功: {url}")
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+
+def _get_deploy_config() -> tuple[Optional[str], Optional[str]]:
+    """获取部署配置（worker_url, access_key）
+    
+    通过运行时适配器获取，支持 CLI 和插件两种模式。
+    """
+    try:
+        from ..runtime import get_adapter
+        adapter = get_adapter()
+        config = adapter.get_full_config()
+        
+        # CLI 模式：config 是 WebAppConfig 对象
+        if hasattr(config, "worker_url"):
+            return config.worker_url, config.access_key
+        # 插件模式：config 可能是字典
+        if isinstance(config, dict):
+            return config.get("worker_url"), config.get("access_key")
+    except (ImportError, RuntimeError):
+        pass
+    
+    return None, None
 
 
 def render_template_vars(html_content: str, template_vars: Dict[str, str]) -> str:
@@ -54,15 +82,18 @@ async def deploy_html_to_worker(
     if template_vars:
         html_content = render_template_vars(html_content, template_vars)
         logger.debug(f"已替换 {len(template_vars)} 个模板变量")
-    if not config.WORKER_URL:
+    
+    worker_url, access_key = _get_deploy_config()
+    
+    if not worker_url:
         logger.error("未配置 Worker URL")
         return None
 
-    if not config.ACCESS_KEY:
+    if not access_key:
         logger.error("未配置访问密钥")
         return None
 
-    worker_url = config.WORKER_URL.rstrip("/")
+    worker_url = worker_url.rstrip("/")
     api_url = f"{worker_url}/api/pages"
 
     # 确保 description 非空
@@ -87,7 +118,7 @@ async def deploy_html_to_worker(
                     api_url,
                     json=request_data.model_dump(),
                     headers={
-                        "Authorization": f"Bearer {config.ACCESS_KEY}",
+                        "Authorization": f"Bearer {access_key}",
                     },
                 )
 
@@ -95,6 +126,7 @@ async def deploy_html_to_worker(
                     data = response.json()
                     result = CreatePageResponse.model_validate(data)
                     logger.info(f"部署成功: {result.url}")
+                    await _emit_deploy_event(result.url)
                     return result.url
 
                 logger.warning(
@@ -122,10 +154,12 @@ async def check_worker_health() -> bool:
     Returns:
         是否健康
     """
-    if not config.WORKER_URL:
+    worker_url, _ = _get_deploy_config()
+    
+    if not worker_url:
         return False
 
-    worker_url = config.WORKER_URL.rstrip("/")
+    worker_url = worker_url.rstrip("/")
     health_url = f"{worker_url}/health"
 
     try:
@@ -134,4 +168,3 @@ async def check_worker_health() -> bool:
             return response.status_code == 200
     except Exception:
         return False
-

@@ -10,7 +10,7 @@ from typing import AsyncGenerator, List, Optional
 from nekro_agent.api.schemas import AgentCtx
 from nekro_agent.core import logger
 from nekro_agent.services.plugin.base import SandboxMethodType
-from nekro_agent.services.plugin.task import AsyncTaskHandle, TaskCtl, task
+from nekro_agent.services.plugin.task import AsyncTaskHandle, TaskCtl, TaskSignal, task
 
 from . import commands as _commands  # noqa: F401
 from .plugin import config, plugin
@@ -35,6 +35,8 @@ async def _webapp_dev_task(
     通过 yield TaskCtl 报告状态，支持进度追踪和中断。
     """
     from .core.agent_loop import run_developer_loop
+    from .runtime import set_adapter
+    from .runtime.nekro import NekroAdapter
     from .services.compiler_client import compile_project
     from .services.deploy import deploy_html_to_worker
     from .services.runtime_state import runtime_state
@@ -43,6 +45,14 @@ async def _webapp_dev_task(
     chat_key = handle.chat_key
     # 使用传递进来的 ID，确保与 task_manager 一致
     task_id = webapp_task_id
+
+    # 初始化运行时适配器 (关键：必须在 run_developer_loop 之前设置)
+    adapter = NekroAdapter(
+        plugin_data_dir=str(plugin.get_plugin_data_dir()),
+        model_group=config.MODEL_GROUP,
+    )
+    adapter.set_notify_callback(handle.notify_agent)
+    set_adapter(adapter)
 
     # 创建任务追踪器
     tracer = TaskTracer(
@@ -248,7 +258,6 @@ async def _webapp_dev_task(
                 message="已通知主 Agent: 部署成功",
             )
             tracer.finalize("SUCCESS")
-            task_manager.update_status(chat_key, task_id, "success", url=url)
             yield TaskCtl.success("部署成功", data={"url": url})
         else:
             tracer.log_event(
@@ -266,7 +275,6 @@ async def _webapp_dev_task(
                 message="已通知主 Agent: 部署失败",
             )
             tracer.finalize("DEPLOY_FAILED")
-            task_manager.update_status(chat_key, task_id, "failed", error="部署失败，URL 为空")
             yield TaskCtl.fail("部署失败")
 
     except Exception as e:
@@ -278,7 +286,6 @@ async def _webapp_dev_task(
             message=f"已通知主 Agent: 任务异常 - {e}",
         )
         tracer.finalize("ERROR", str(e))
-        task_manager.update_status(chat_key, task_id, "failed", error=str(e))
         yield TaskCtl.fail(f"任务异常: {e}")
 
 
@@ -322,6 +329,14 @@ async def create_webapp_task(
     webapp_task = task_manager.create_task(_ctx.chat_key, requirement)
     task_id = webapp_task.task_id
 
+    # 终态回调：统一处理任务状态同步
+    def _on_terminal(ctl: TaskCtl) -> None:
+        if ctl.signal == TaskSignal.SUCCESS:
+            url = ctl.data.get("url") if isinstance(ctl.data, dict) else None
+            task_manager.update_status(_ctx.chat_key, task_id, "success", url=url)
+        else:
+            task_manager.update_status(_ctx.chat_key, task_id, "failed", error=ctl.message)
+
     # 启动异步执行
     try:
         await task.start(
@@ -329,6 +344,7 @@ async def create_webapp_task(
             task_id=task_id,
             chat_key=_ctx.chat_key,
             plugin=plugin,
+            on_terminal=_on_terminal,
             requirement=requirement.strip(),
             webapp_task_id=task_id,
         )
@@ -385,12 +401,21 @@ async def send_webapp_feedback(
         project_ctx = get_project_context(_ctx.chat_key, task_id)
         existing_files = list(project_ctx.list_files())
 
+        # 终态回调
+        def _on_terminal(ctl: TaskCtl) -> None:
+            if ctl.signal == TaskSignal.SUCCESS:
+                url = ctl.data.get("url") if isinstance(ctl.data, dict) else None
+                task_manager.update_status(_ctx.chat_key, task_id, "success", url=url)
+            else:
+                task_manager.update_status(_ctx.chat_key, task_id, "failed", error=ctl.message)
+
         try:
             await task.start(
                 task_type="webapp_dev",
                 task_id=task_id,
                 chat_key=_ctx.chat_key,
                 plugin=plugin,
+                on_terminal=_on_terminal,
                 requirement=task_info.get_full_requirement(),
                 webapp_task_id=task_id,
                 existing_files=existing_files,

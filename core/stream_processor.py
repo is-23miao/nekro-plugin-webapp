@@ -18,9 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from nekro_agent.core.logger import logger
-
 from .command_parser import CommandStreamParser, CommandType, ParsedCommand
+from .logger import logger
 from .streaming_client import stream_text_completion
 
 if TYPE_CHECKING:

@@ -5,9 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from nekro_agent.api.core import logger
-
 from . import node_manager
+from .logger import logger
 
 if TYPE_CHECKING:
     from .task_tracer import TaskTracer
@@ -19,10 +18,18 @@ async def compile_project(
     tracer: "TaskTracer",
     env_vars: Optional[Dict[str, str]] = None,
     agent_id: str = "UNKNOWN",
+    skip_type_check: bool = False,
 ) -> Tuple[bool, str, List[str]]:
     """
     使用本地封装的 ESBuild (Wasm) 进行编译
     支持 process.env 变量注入 (通过 define)
+    
+    Args:
+        files: 源文件字典
+        tracer: 任务追踪器
+        env_vars: 环境变量
+        agent_id: Agent ID
+        skip_type_check: 跳过类型检查（仅在确认类型错误为误报时使用）
     
     Returns:
         (success, output_code, external_imports)
@@ -43,11 +50,12 @@ async def compile_project(
             return False, f"Compiler script not found at {script_path}", []
 
         # 1.5. 执行类型检查 (TypeScript Strict Check)
-        type_check_error = await check_project(files, tracer, env_vars, agent_id)
-        if type_check_error:
-            # 如果类型检查失败，直接返回错误，不需要继续构建 bundle
-            # 这能捕获如 undefined variables, missing imports 等关键错误
-            return False, f"Type Check Failed:\n{type_check_error}", []
+        if not skip_type_check:
+            type_check_error = await check_project(files, tracer, env_vars, agent_id)
+            if type_check_error:
+                # 如果类型检查失败，直接返回错误，不需要继续构建 bundle
+                # 这能捕获如 undefined variables, missing imports 等关键错误
+                return False, f"Type Check Failed:\n{type_check_error}", []
 
         # 2. 调用 Node 进程
         input_payload = {

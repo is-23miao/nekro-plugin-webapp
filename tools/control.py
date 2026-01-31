@@ -25,11 +25,15 @@ from .compile import enhance_compile_error
                 "type": "string",
                 "description": "WebApp 页面标题（用于浏览器显示）",
             },
+            "skip_check": {
+                "type": "boolean",
+                "description": "跳过类型检查（仅当确认类型错误为第三方库类型定义缺失等误报时使用）",
+            },
         },
         "required": ["summary"],
     },
 )
-async def done(ctx: ToolContext, summary: str, title: str = "") -> ToolResult:
+async def done(ctx: ToolContext, summary: str, title: str = "", skip_check: bool = False) -> ToolResult:
     """标记完成（动作型工具，静默成功）"""
     files = ctx.project.get_snapshot()
 
@@ -42,7 +46,7 @@ async def done(ctx: ToolContext, summary: str, title: str = "") -> ToolResult:
         ctx.tracer.log_event(
             event_type=ctx.tracer.EVENT.COMPILE_START,
             agent_id=ctx.task_id,
-            message="提交前自动编译",
+            message="提交前自动编译" + (" (跳过类型检查)" if skip_check else ""),
             file_count=len(files),
         )
 
@@ -50,6 +54,7 @@ async def done(ctx: ToolContext, summary: str, title: str = "") -> ToolResult:
         files=files,
         tracer=ctx.tracer,
         agent_id=ctx.task_id,
+        skip_type_check=skip_check,
     )
 
     ctx.state.compile_success = success
